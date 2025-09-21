@@ -1,21 +1,20 @@
-﻿class CLI_Handler
+﻿using System.Diagnostics;
+
+class CLI_Handler
 {
-    // public string Mode { get; set; }
-    // public string Path { get; set; }
+    // TODO: include a check for user input
 
     public CLI_Handler(string mode, string path)
     {
-        // Mode = mode;
-        // Path = path;
-        handleCLI(mode, path);
+        HandleCLI(mode, path);
     }
 
-    private void handleCLI(string mode, string path)
+    private static void HandleCLI(string mode, string path)
     {
         // FileHandler fileHandler = new FileHandler(path);
         if (mode == "-s")
         {
-            SequentialMode seq = new SequentialMode(path);
+            VisualHandler.HandleVisuals(new SequentialMode(), path);
         }
         else if (mode == "-b")
         {
@@ -23,7 +22,7 @@
         }
         else if (mode == "-d")
         {
-            SequentialMode seq = new SequentialMode(path);
+            VisualHandler.HandleVisuals(new SequentialMode(), path);
             ParallelMode par = new ParallelMode(path);
         }
         else
@@ -33,31 +32,60 @@
     }
 }
 
-class SequentialMode
+class VisualHandler
 {
-    // public string Path { get; set; }
-
-    public SequentialMode(string path)
+    public static void HandleVisuals(IThreadHandler threadHandler, string path)
     {
-        // Path = path;
-        runSequential(path);
+        Stopwatch stopwatch = new();
+        threadHandler.RunThreadMode(path);
+        stopwatch.Stop();
+        Console.WriteLine($"Sequential Calculated in: {stopwatch.Elapsed.TotalSeconds}s");
+        Console.WriteLine($"{threadHandler.FolderCount:N0} folders, {threadHandler.FileCount:N0} files, {threadHandler.ByteCount:N0} bytes");
     }
 
-    private void runSequential(string path)
-    {
-        // Foreach
-    }
+}
 
+interface IThreadHandler
+{
+    public int FolderCount { get; set; }
+    public int FileCount { get; set; }
+    public int ByteCount { get; set; }
+    void RunThreadMode(string path);
+
+}
+class SequentialMode : IThreadHandler
+{
+    public int FolderCount { get; set; } = 0;
+    public int FileCount { get; set; } = 0;
+    public int ByteCount { get; set; } = 0;
+
+    public void RunThreadMode(string path)
+    {
+        foreach (string d in Directory.GetDirectories(path))
+        {
+            if (FileHandler.HasReadAccess(d))
+            {
+                FolderCount += 1;
+                RunThreadMode(d);
+            }
+            Console.WriteLine($"{d}");
+        }
+        foreach (string f in Directory.GetFiles(path))
+        {
+            FileCount += 1;
+            ByteCount += FileHandler.GetByteCount(f);
+        }
+    }
 }
 
 class ParallelMode
 {
     public ParallelMode(string path)
     {
-        runParallel(path);
+        RunParallel(path);
     }
 
-    private void runParallel(string path)
+    private static void RunParallel(string path)
     {
         // Parallel.ForEach
     }
@@ -65,47 +93,62 @@ class ParallelMode
 
 class FileHandler
 {
-    public HashSet<string> files = new HashSet<string>();
-    public HashSet<string> directories = new HashSet<string>();
-    public string Path { get; set; }
-    private int folderCount = 0;
-    private int fileCount = 0;
-    private int byteCount = 0;
-
-    // this must be recursive
-
-    public FileHandler(string path)
+    public static bool HasReadAccess(string path)
     {
-        Path = path;
+        try
+        {
+            string[] files = Directory.GetFiles(path);
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (FileNotFoundException)
+        {
+            return false;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"An unexpected error {e} occured");
+            return false;
+        }
     }
 
-    public void findAllPaths(string path)
+    public static int GetByteCount(string path)
     {
-        // base case
-        if (File.Exists(path))
+        FileInfo fileInfo = new(path);
+        try
         {
-            files.Add(path);
-            fileCount += 1;
+            int byteCount = Convert.ToInt32(fileInfo.Length);
+            return byteCount;
         }
-        else if (Directory.Exists(path))
+        catch (OverflowException)
         {
-            // Parallel.foreach for parallel
-            foreach (string d in Directory.GetDirectories(path))
-            {
-                directories.Add(d);
-                folderCount += 1;
-                findAllPaths(d);
-            }
-            foreach (string f in Directory.GetFiles(path))
-            {
-                files.Add(f);
-                fileCount += 1;
-            }
+            Console.WriteLine("Overflow error");
+            throw;
         }
-        Console.WriteLine(files);
-        Console.WriteLine(directories);
-        Console.WriteLine(fileCount);
-        Console.WriteLine(folderCount);
+        catch (FileNotFoundException)
+        {
+            Console.WriteLine("File not found somehow?");
+            throw;
+        }
+    }
+
+    public static bool IsImageFile(string path)
+    {
+        string extension = Path.GetExtension(path);
+        string[] validExtensions = [".jpg", ".png", ".gif", ".jpeg"];
+
+        if (validExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+
     }
 }
 
@@ -113,8 +156,18 @@ class Program
 {
     static void Main(string[] args)
     {
-        string main = "C:\\Users\\extra";
-        FileHandler fileHandler = new FileHandler(main);
-        fileHandler.findAllPaths(main);
+        string main = "C:\\Users\\extra\\Fall2025";
+        SequentialMode sequentialMode = new();
+        Stopwatch watch = Stopwatch.StartNew();
+        sequentialMode.RunThreadMode(main);
+        watch.Stop();
+        Console.WriteLine($"Sequential Calculated in: {watch.Elapsed.TotalSeconds}s");
+        Console.WriteLine($"{sequentialMode.FolderCount:N0} folders, {sequentialMode.FileCount:N0} files, {sequentialMode.ByteCount:N0} bytes");
+
+
+        // Console.WriteLine(fileHandler.GetFileCount());
+        // Console.WriteLine(fileHandler.GetFolderCount());
+        // bool x = FileHandler.HasReadAccess(main);
+        // Console.WriteLine(x);
     }
 }
