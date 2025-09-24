@@ -4,42 +4,73 @@ class CLI_Handler
 {
     // TODO: include a check for user input
 
-    public CLI_Handler(string mode, string path)
+    public static void MainLoop()
     {
-        HandleCLI(mode, path);
+        Console.WriteLine("Disk usage (dh) project");
+        Console.WriteLine("Usage: du [-s] [-d] [-b] <path>");
+        while (true)
+        {
+            var input = Console.ReadLine();
+            if (input != null)
+            {
+
+                try
+                {
+                    if (input == "-h")
+                    {
+                        Console.WriteLine("Usage: du [-s] [-d] [-b] <path>");
+                        Console.WriteLine("Summarize disk usage of the set of FILES, recursively for directories.");
+                        Console.WriteLine("You MUST specify one of the parameters, -s, -d, or -b");
+                        Console.WriteLine("-s Run in single threaded mode");
+                        Console.WriteLine("-d Run in parallel mode (uses all available processors)");
+                        Console.WriteLine("-b Run in both parallel and single threaded mode.");
+                        Console.WriteLine("Runs parallel followed by sequential mode");
+                    }
+                    else
+                    {
+                        string[] prompts = input.Split(" ");
+                        HandleCLI(prompts[1], prompts[2]);
+                    }
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    Console.WriteLine("Incorrect usage. Use \"-h\" for help");
+                }
+
+            }
+        }
     }
 
-    private static void HandleCLI(string mode, string path)
+    public static void HandleCLI(string mode, string path)
     {
-        // FileHandler fileHandler = new FileHandler(path);
         if (mode == "-s")
         {
-            VisualHandler.HandleVisuals(new SequentialMode(), path);
+            VisualHandler.HandleVisuals(new SequentialMode(), "Sequential", path);
         }
         else if (mode == "-b")
         {
-            ParallelMode par = new ParallelMode(path);
+            VisualHandler.HandleVisuals(new ParallelMode(), "Parallel", path);
         }
         else if (mode == "-d")
         {
-            VisualHandler.HandleVisuals(new SequentialMode(), path);
-            ParallelMode par = new ParallelMode(path);
+            VisualHandler.HandleVisuals(new SequentialMode(), "Sequential", path);
+            VisualHandler.HandleVisuals(new ParallelMode(), "Parallel", path);
         }
         else
         {
-            Console.WriteLine("Unknown Input given");
+            Console.WriteLine("Use \"-h\" for help");
         }
     }
 }
 
 class VisualHandler
 {
-    public static void HandleVisuals(IThreadHandler threadHandler, string path)
+    public static void HandleVisuals(IThreadHandler threadHandler, string mode, string path)
     {
-        Stopwatch stopwatch = new();
+        Stopwatch stopwatch = Stopwatch.StartNew();
         threadHandler.RunThreadMode(path);
         stopwatch.Stop();
-        Console.WriteLine($"Sequential Calculated in: {stopwatch.Elapsed.TotalSeconds}s");
+        Console.WriteLine($"{mode} Calculated in: {stopwatch.Elapsed.TotalSeconds}s");
         Console.WriteLine($"{threadHandler.FolderCount:N0} folders, {threadHandler.FileCount:N0} files, {threadHandler.ByteCount:N0} bytes");
     }
 
@@ -49,15 +80,16 @@ interface IThreadHandler
 {
     public int FolderCount { get; set; }
     public int FileCount { get; set; }
-    public int ByteCount { get; set; }
+    public long ByteCount { get; set; }
     void RunThreadMode(string path);
 
 }
+
 class SequentialMode : IThreadHandler
 {
     public int FolderCount { get; set; } = 0;
     public int FileCount { get; set; } = 0;
-    public int ByteCount { get; set; } = 0;
+    public long ByteCount { get; set; } = 0;
 
     public void RunThreadMode(string path)
     {
@@ -68,7 +100,6 @@ class SequentialMode : IThreadHandler
                 FolderCount += 1;
                 RunThreadMode(d);
             }
-            Console.WriteLine($"{d}");
         }
         foreach (string f in Directory.GetFiles(path))
         {
@@ -78,16 +109,38 @@ class SequentialMode : IThreadHandler
     }
 }
 
-class ParallelMode
+class ParallelMode : IThreadHandler
 {
-    public ParallelMode(string path)
+    public int FolderCount { get; set; } = 0;
+    public int FileCount { get; set; } = 0;
+    public long ByteCount { get; set; } = 0;
+
+
+    public Queue<string> directories = new();
+
+    // private bool allPathsFound = false;
+
+    private void FindAllPaths(string path)
     {
-        RunParallel(path);
+        foreach (string d in Directory.GetDirectories(path))
+        {
+            if (FileHandler.HasReadAccess(d))
+            {
+                directories.Enqueue(d);
+                FindAllPaths(d);
+                Console.WriteLine($"{d}");
+            }
+        }
     }
 
-    private static void RunParallel(string path)
+    public void RunThreadMode(string path)
     {
-        // Parallel.ForEach
+        // int length = directories.Count;
+        // Parallel.ForEach(0, length =>
+        // {
+        //     string task = directories.Dequeue();
+
+        // });
     }
 }
 
@@ -115,24 +168,24 @@ class FileHandler
         }
     }
 
-    public static int GetByteCount(string path)
+    public static long GetByteCount(string path)
     {
         FileInfo fileInfo = new(path);
-        try
-        {
-            int byteCount = Convert.ToInt32(fileInfo.Length);
-            return byteCount;
-        }
-        catch (OverflowException)
-        {
-            Console.WriteLine("Overflow error");
-            throw;
-        }
-        catch (FileNotFoundException)
-        {
-            Console.WriteLine("File not found somehow?");
-            throw;
-        }
+        return fileInfo.Length;
+        // try
+        // {
+        //     return fileInfo.Length;
+        // }
+        // catch (OverflowException)
+        // {
+        //     Console.WriteLine("Overflow error");
+        //     throw;
+        // }
+        // catch (FileNotFoundException)
+        // {
+        //     Console.WriteLine("File not found somehow?");
+        //     throw;
+        // }
     }
 
     public static bool IsImageFile(string path)
@@ -156,18 +209,7 @@ class Program
 {
     static void Main(string[] args)
     {
-        string main = "C:\\Users\\extra\\Fall2025";
-        SequentialMode sequentialMode = new();
-        Stopwatch watch = Stopwatch.StartNew();
-        sequentialMode.RunThreadMode(main);
-        watch.Stop();
-        Console.WriteLine($"Sequential Calculated in: {watch.Elapsed.TotalSeconds}s");
-        Console.WriteLine($"{sequentialMode.FolderCount:N0} folders, {sequentialMode.FileCount:N0} files, {sequentialMode.ByteCount:N0} bytes");
-
-
-        // Console.WriteLine(fileHandler.GetFileCount());
-        // Console.WriteLine(fileHandler.GetFolderCount());
-        // bool x = FileHandler.HasReadAccess(main);
-        // Console.WriteLine(x);
+        // string main = "C:\\Users\\extra\\Fall2025";
+        CLI_Handler.MainLoop();
     }
 }
