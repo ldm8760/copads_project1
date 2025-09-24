@@ -109,38 +109,66 @@ class SequentialMode : IThreadHandler
     }
 }
 
-class ParallelMode : IThreadHandler
+class Worker(string dir)
 {
+    private string Dir = dir;
+    public int workerFileCount = 0;
+    public long workerByteCount = 0;
+
+    public void DoWork()
+    {
+        foreach (string f in Directory.GetFiles(Dir))
+        {
+            workerFileCount += 1;
+            workerByteCount += FileHandler.GetByteCount(f);
+        }
+    }
+}
+
+class ParallelMode: IThreadHandler
+{
+    List<string> Directories { get; set; } = [];
     public int FolderCount { get; set; } = 0;
     public int FileCount { get; set; } = 0;
     public long ByteCount { get; set; } = 0;
 
 
-    public Queue<string> directories = new();
-
-    // private bool allPathsFound = false;
-
-    private void FindAllPaths(string path)
+    private void FindPaths(string path)
     {
         foreach (string d in Directory.GetDirectories(path))
         {
             if (FileHandler.HasReadAccess(d))
             {
-                directories.Enqueue(d);
-                FindAllPaths(d);
-                Console.WriteLine($"{d}");
+                Directories.Add(d);
+                FolderCount += 1;
+                FindPaths(d);
             }
         }
     }
 
+    public void TraversePaths()
+    {
+        List<Worker> workers = [];
+        foreach (string d in Directories)
+        {
+            Worker worker = new(d);
+            Thread thread = new(worker.DoWork);
+            thread.Start();
+            workers.Add(worker);
+        }
+        foreach (Worker w in workers)
+        {
+            // race condition issue
+            FileCount += w.workerFileCount;
+            ByteCount += w.workerByteCount;
+        }
+        Console.WriteLine($"Parallel filecount: {FileCount:N0}, bytecount: {ByteCount:N0}");
+    }
+
     public void RunThreadMode(string path)
     {
-        // int length = directories.Count;
-        // Parallel.ForEach(0, length =>
-        // {
-        //     string task = directories.Dequeue();
-
-        // });
+        FindPaths(path);
+        TraversePaths();
     }
 }
 
