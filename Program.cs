@@ -109,22 +109,6 @@ class SequentialMode : IThreadHandler
     }
 }
 
-class Worker(string dir)
-{
-    private string Dir = dir;
-    public int workerFileCount = 0;
-    public long workerByteCount = 0;
-
-    public void DoWork()
-    {
-        foreach (string f in Directory.GetFiles(Dir))
-        {
-            workerFileCount += 1;
-            workerByteCount += FileHandler.GetByteCount(f);
-        }
-    }
-}
-
 class ParallelMode: IThreadHandler
 {
     List<string> Directories { get; set; } = [];
@@ -132,37 +116,49 @@ class ParallelMode: IThreadHandler
     public int FileCount { get; set; } = 0;
     public long ByteCount { get; set; } = 0;
 
-
     private void FindPaths(string path)
     {
+        // Add the current path to directories so its files get processed
+        Directories.Add(path);
+
         foreach (string d in Directory.GetDirectories(path))
         {
             if (FileHandler.HasReadAccess(d))
             {
-                Directories.Add(d);
                 FolderCount += 1;
                 FindPaths(d);
             }
         }
     }
 
+    // private void FindPaths(string path)
+    // {
+    //     foreach (string d in Directory.GetDirectories(path))
+    //     {
+    //         if (FileHandler.HasReadAccess(d))
+    //         {
+    //             Directories.Add(d);
+    //             FolderCount += 1;
+    //             FindPaths(d);
+    //         }
+    //     }
+    // }
+
     public void TraversePaths()
     {
-        List<Worker> workers = [];
-        foreach (string d in Directories)
+        int localFileCount = 0;
+        long localByteCount = 0;
+        Parallel.ForEach(Directories, d =>
         {
-            Worker worker = new(d);
-            Thread thread = new(worker.DoWork);
-            thread.Start();
-            workers.Add(worker);
-        }
-        foreach (Worker w in workers)
-        {
-            // race condition issue
-            FileCount += w.workerFileCount;
-            ByteCount += w.workerByteCount;
-        }
-        Console.WriteLine($"Parallel filecount: {FileCount:N0}, bytecount: {ByteCount:N0}");
+            foreach (string f in Directory.GetFiles(d))
+            {
+                Interlocked.Increment(ref localFileCount);
+                Interlocked.Add(ref localByteCount, FileHandler.GetByteCount(f));
+            }
+        });
+
+        FileCount = localFileCount;
+        ByteCount = localByteCount;
     }
 
     public void RunThreadMode(string path)
