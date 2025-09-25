@@ -118,7 +118,6 @@ class ParallelMode: IThreadHandler
 
     private void FindPaths(string path)
     {
-        // Add the current path to directories so its files get processed
         Directories.Add(path);
 
         foreach (string d in Directory.GetDirectories(path))
@@ -130,19 +129,6 @@ class ParallelMode: IThreadHandler
             }
         }
     }
-
-    // private void FindPaths(string path)
-    // {
-    //     foreach (string d in Directory.GetDirectories(path))
-    //     {
-    //         if (FileHandler.HasReadAccess(d))
-    //         {
-    //             Directories.Add(d);
-    //             FolderCount += 1;
-    //             FindPaths(d);
-    //         }
-    //     }
-    // }
 
     public void TraversePaths()
     {
