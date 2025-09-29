@@ -2,8 +2,6 @@
 
 class CLI_Handler
 {
-    // TODO: include a check for user input
-
     public static void MainLoop()
     {
         Console.WriteLine("Disk usage (dh) project");
@@ -11,12 +9,16 @@ class CLI_Handler
         while (true)
         {
             var input = Console.ReadLine();
+            if (input == "exit")
+            {
+                break;
+            }
             if (input != null)
             {
 
                 try
                 {
-                    if (input == "-h")
+                    if (input == "-h" || input == "du -h")
                     {
                         Console.WriteLine("Usage: du [-s] [-d] [-b] <path>");
                         Console.WriteLine("Summarize disk usage of the set of FILES, recursively for directories.");
@@ -25,6 +27,7 @@ class CLI_Handler
                         Console.WriteLine("-d Run in parallel mode (uses all available processors)");
                         Console.WriteLine("-b Run in both parallel and single threaded mode.");
                         Console.WriteLine("Runs parallel followed by sequential mode");
+                        Console.WriteLine("\"exit\" to leave the program");
                     }
                     else
                     {
@@ -36,6 +39,10 @@ class CLI_Handler
                 {
                     Console.WriteLine("Incorrect usage. Use \"-h\" for help");
                 }
+                catch (IOException)
+                {
+                    Console.WriteLine("Incorrect usage. Use \"-h\" for help");
+                }
 
             }
         }
@@ -43,23 +50,31 @@ class CLI_Handler
 
     public static void HandleCLI(string mode, string path)
     {
-        if (mode == "-s")
+        try
         {
-            VisualHandler.HandleVisuals(new SequentialMode(), "Sequential", path);
+            if (mode == "-s")
+            {
+                VisualHandler.HandleVisuals(new SequentialMode(), "Sequential", path);
+            }
+            else if (mode == "-b")
+            {
+                VisualHandler.HandleVisuals(new ParallelMode(), "Parallel", path);
+            }
+            else if (mode == "-d")
+            {
+                VisualHandler.HandleVisuals(new SequentialMode(), "Sequential", path);
+                VisualHandler.HandleVisuals(new ParallelMode(), "Parallel", path);
+            }
+            else
+            {
+                Console.WriteLine("Use \"-h\" for help");
+            }
         }
-        else if (mode == "-b")
+        catch (DirectoryNotFoundException)
         {
-            VisualHandler.HandleVisuals(new ParallelMode(), "Parallel", path);
+            Console.WriteLine("Unknown directory, use dir or ls and try again");
         }
-        else if (mode == "-d")
-        {
-            VisualHandler.HandleVisuals(new SequentialMode(), "Sequential", path);
-            VisualHandler.HandleVisuals(new ParallelMode(), "Parallel", path);
-        }
-        else
-        {
-            Console.WriteLine("Use \"-h\" for help");
-        }
+        
     }
 }
 
@@ -71,7 +86,8 @@ class VisualHandler
         threadHandler.RunThreadMode(path);
         stopwatch.Stop();
         Console.WriteLine($"{mode} Calculated in: {stopwatch.Elapsed.TotalSeconds}s");
-        Console.WriteLine($"{threadHandler.FolderCount:N0} folders, {threadHandler.FileCount:N0} files, {threadHandler.ByteCount:N0} bytes");
+        Console.WriteLine($"{threadHandler.FolderCount:N0} folders, {threadHandler.FileCount:N0} files, {threadHandler.TotalByteCount:N0} bytes");
+        Console.WriteLine($"{threadHandler.ImageCount:N0} image files, {threadHandler.ImageByteCount:N0} bytes");
     }
 
 }
@@ -80,7 +96,9 @@ interface IThreadHandler
 {
     public int FolderCount { get; set; }
     public int FileCount { get; set; }
-    public long ByteCount { get; set; }
+    public int ImageCount { get; set; }
+    public long ImageByteCount { get; set; }
+    public long TotalByteCount { get; set; }
     void RunThreadMode(string path);
 
 }
@@ -89,7 +107,9 @@ class SequentialMode : IThreadHandler
 {
     public int FolderCount { get; set; } = 0;
     public int FileCount { get; set; } = 0;
-    public long ByteCount { get; set; } = 0;
+    public int ImageCount { get; set; } = 0;
+    public long ImageByteCount { get; set; } = 0;
+    public long TotalByteCount { get; set; } = 0;
 
     public void RunThreadMode(string path)
     {
@@ -104,7 +124,13 @@ class SequentialMode : IThreadHandler
         foreach (string f in Directory.GetFiles(path))
         {
             FileCount += 1;
-            ByteCount += FileHandler.GetByteCount(f);
+            long size = FileHandler.GetByteCount(f);
+            TotalByteCount += size;
+            if (FileHandler.IsImageFile(f))
+            {
+                ImageCount += 1;
+                ImageByteCount += size;
+            }
         }
     }
 }
@@ -114,7 +140,9 @@ class ParallelMode: IThreadHandler
     List<string> Directories { get; set; } = [];
     public int FolderCount { get; set; } = 0;
     public int FileCount { get; set; } = 0;
-    public long ByteCount { get; set; } = 0;
+    public int ImageCount { get; set; } = 0;
+    public long ImageByteCount { get; set; } = 0;
+    public long TotalByteCount { get; set; } = 0;
 
     private void FindPaths(string path)
     {
@@ -133,18 +161,38 @@ class ParallelMode: IThreadHandler
     public void TraversePaths()
     {
         int localFileCount = 0;
-        long localByteCount = 0;
+        long localTotalByteCount = 0;
+        int localImageCount = 0;
+        long localImageByteCount = 0;
+
+        object myLock = new();
         Parallel.ForEach(Directories, d =>
         {
             foreach (string f in Directory.GetFiles(d))
             {
-                Interlocked.Increment(ref localFileCount);
-                Interlocked.Add(ref localByteCount, FileHandler.GetByteCount(f));
+                long size = FileHandler.GetByteCount(f);
+                int isImage = 0;
+                long imageSize = 0;
+                if (FileHandler.IsImageFile(f))
+                {
+                    isImage = 1;
+                    imageSize = size;
+                }
+
+                lock (myLock)
+                {
+                    localFileCount += 1;
+                    localTotalByteCount += size;
+                    localImageCount += isImage;
+                    localImageByteCount += imageSize;
+                }
             }
         });
 
         FileCount = localFileCount;
-        ByteCount = localByteCount;
+        TotalByteCount = localTotalByteCount;
+        ImageCount = localImageCount;
+        ImageByteCount = localImageByteCount;
     }
 
     public void RunThreadMode(string path)
